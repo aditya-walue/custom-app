@@ -182,7 +182,7 @@
     {
         "name": "Quotation - Add CRM Deal to Quotation To",
         "dt": "Quotation",
-        "script": "frappe.ui.form.on(\"Quotation\", {\n    setup(frm) {\n        frm.set_query(\"quotation_to\", () => {\n            return {\n                filters: {\n                    name: [\"in\", [\"Customer\", \"Lead\", \"Prospect\", \"CRM Deal\"]]\n                }\n            };\n        });\n    }\n});",
+        "script": "frappe.ui.form.on('Quotation', {\n    setup: function(frm) {\n        setTimeout(() => {\n            frm.set_query('quotation_to', function () {\n                return {\n                    filters: {\n                        name: ['in', ['Customer', 'Lead', 'Prospect', 'CRM Deal']]\n                    }\n                };\n            });\n        }, 500);\n    },\n    quotation_to: function(frm) {\n        if (frm.doc.quotation_to === 'CRM Deal') {\n            frm.set_df_property('party_name', 'label', 'CRM Deal');\n            frm.fields_dict.party_name.get_query = null;\n        }\n    },\n    refresh: function(frm) {\n        if (frm.doc.quotation_to === 'CRM Deal') {\n            frm.set_df_property('party_name', 'label', 'CRM Deal');\n        }\n    }\n});",
         "doctype": "Client Script"
     },
     {
