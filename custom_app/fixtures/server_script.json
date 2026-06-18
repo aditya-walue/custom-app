@@ -1,0 +1,149 @@
+[
+    {
+        "name": "Auto Currency Exchange Rate",
+        "reference_doctype": "Sales Invoice",
+        "script": "company_currency = frappe.db.get_value(\"Company\", doc.company, \"default_currency\")\n\nif doc.currency and company_currency and doc.currency != company_currency:\n\n    rates = {\n        (\"USD\", \"NPR\"): 133,\n        (\"NPR\", \"USD\"): 0.0075,\n        (\"USD\", \"INR\"): 83,\n        (\"INR\", \"USD\"): 0.012,\n        (\"INR\", \"NPR\"): 1.6,\n        (\"NPR\", \"INR\"): 0.62\n    }\n\n    rate = rates.get((doc.currency, company_currency), 1)\n\n  \n    doc.conversion_rate = rate\n    doc.plc_conversion_rate = rate",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "auto fetch wfh deduction",
+        "reference_doctype": "Salary Slip",
+        "script": "wfh_days = frappe.db.count(\n    \"Attendance\",\n    {\n        \"employee\": doc.employee,\n        \"status\": \"Work From Home\",\n        \"custom_wfh_type\": \"WFH employee\",\n        \"attendance_date\": [\n            \"between\",\n            [doc.start_date, doc.end_date]\n        ]\n    }\n)\n\ndoc.custom_wfh_days = wfh_days\n\nbasic_amount = 0\n\nfor row in doc.earnings:\n\n    if row.salary_component == \"basic\":\n        basic_amount = row.amount\n\nwfh_amount = (\n    basic_amount\n    * wfh_days\n    * 0.4\n) / (doc.payment_days or 1)\n\nfound = False\n\nfor row in doc.deductions:\n\n    if row.salary_component == \"WFH deduction\":\n        row.amount = wfh_amount\n        found = True\n\nif not found and wfh_amount > 0:\n\n    doc.append(\"deductions\", {\n        \"salary_component\": \"WFH deduction\",\n        \"amount\": wfh_amount\n    })",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Auto-create folders",
+        "reference_doctype": "Project",
+        "script": "def create_folder(name, parent):\n    existing = frappe.db.exists(\"File\", {\n        \"file_name\": name,\n        \"is_folder\": 1,\n        \"folder\": parent\n    })\n\n    if existing:\n        return existing\n\n    folder = frappe.new_doc(\"File\")\n    folder.file_name = name\n    folder.is_folder = 1\n    folder.folder = parent\n    folder.is_private = 0\n\n    folder.flags.ignore_permissions = True\n    folder.flags.ignore_links = True\n    folder.flags.ignore_mandatory = True\n\n    folder.db_insert()\n\n    return folder.name\n\n\n# Ensure \"Projects\" folder exists\nprojects_root = create_folder(\"Projects\", \"Home\")\n\n# Use project_name instead of ID\nfolder_name = doc.project_name or doc.name\n\ncreate_folder(folder_name, projects_root)",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Auto-fill Service Interested from Lead",
+        "reference_doctype": "CRM Deal",
+        "script": "if doc.lead and not doc.custom_service_interested:\n    lead = frappe.get_doc(\"CRM Lead\", doc.lead)\n    doc.custom_service_interested = lead.custom_service_interested or \"\"",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Auto-route file into project folder",
+        "reference_doctype": "File",
+        "script": "project_folder_name = None\n\n# File attached directly to Project\nif doc.attached_to_doctype == \"Project\":\n\n    project_folder_name = frappe.db.get_value(\n        \"Project\",\n        doc.attached_to_name,\n        \"project_name\"\n    )\n\n# File attached to Task\nelif doc.attached_to_doctype == \"Task\":\n\n    project = frappe.db.get_value(\n        \"Task\",\n        doc.attached_to_name,\n        \"project\"\n    )\n\n    if project:\n        project_folder_name = frappe.db.get_value(\n            \"Project\",\n            project,\n            \"project_name\"\n        )\n\nif project_folder_name:\n\n    # Find Projects root folder\n    projects_root = frappe.db.get_value(\n        \"File\",\n        {\n            \"file_name\": \"Projects\",\n            \"is_folder\": 1\n        },\n        \"name\"\n    )\n\n    if projects_root:\n\n        # Find matching folder\n        project_folder = frappe.db.get_value(\n            \"File\",\n            {\n                \"file_name\": project_folder_name,\n                \"is_folder\": 1,\n                \"folder\": projects_root\n            },\n            \"name\"\n        )\n\n        # Move file into project folder\n        if project_folder and doc.folder != project_folder:\n            doc.db_set(\"folder\", project_folder)",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Autofill item in deal",
+        "reference_doctype": "CRM Deal",
+        "script": "for row in (doc.products or []):\n    if row.custom_item and not row.product_name:\n        item_name = frappe.db.get_value(\n            \"Item\",\n            row.custom_item,\n            \"item_name\"\n        )\n        if item_name:\n            row.product_name = item_name",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Calculate Expected Deal Value",
+        "reference_doctype": "CRM Deal",
+        "script": "total = 0\nfor row in (doc.products or []):\n    total += float(row.rate or 0)\n\ndoc.expected_deal_value = total",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Calculate insufficient hours",
+        "reference_doctype": "Salary Slip",
+        "script": "if not doc.employee or not doc.start_date or not doc.end_date:\n    pass\nelse:\n    payment_days = doc.payment_days or 0\n    if payment_days == 0:\n        doc.custom_insufficient_hours = 0\n        doc.custom_overtime_hours = 0\n    else:\n        checkins = frappe.get_all(\n            \"Employee Checkin\",\n            filters={\n                \"employee\": doc.employee,\n                \"time\": [\"between\", [doc.start_date, doc.end_date + \" 23:59:59\"]],\n            },\n            fields=[\"time\", \"log_type\"],\n            order_by=\"time asc\"\n        )\n        daily_hours = {}\n        i = 0\n        while i < len(checkins) - 1:\n            if checkins[i][\"log_type\"] == \"IN\" and checkins[i + 1][\"log_type\"] == \"OUT\":\n                hours = frappe.utils.time_diff_in_hours(\n                    checkins[i + 1][\"time\"],\n                    checkins[i][\"time\"]\n                )\n                day = str(checkins[i][\"time\"])[:10]\n                daily_hours[day] = daily_hours.get(day, 0) + hours\n                i += 2\n            else:\n                i += 1\n\n        total_insufficient = 0.0\n        total_overtime = 0.0\n\n        for day, worked in daily_hours.items():\n            if worked < 8:\n                total_insufficient += (8 - worked)\n            elif worked > 8:\n                total_overtime += (worked - 8)\n\n        doc.custom_insufficient_hours = total_insufficient\n        doc.custom_overtime_hours = total_overtime\n\n        base = doc.base or 0\n        if payment_days > 0:\n            hourly_rate = base / payment_days / 8\n\n            if total_insufficient > 0:\n                deduction_amount = total_insufficient * hourly_rate\n                for row in doc.deductions:\n                    if row.salary_component == \"Insufficient Hour Deduction\":\n                        row.amount = deduction_amount\n\n            if total_overtime > 0:\n                overtime_amount = total_overtime * hourly_rate\n                for row in doc.earnings:\n                    if row.salary_component == \"OT Allowance\":\n                        row.amount = overtime_amount",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Casual Leave",
+        "reference_doctype": "Leave Application",
+        "script": "today = frappe.utils.getdate(frappe.utils.nowdate())\n\n# Only run if from_date exists\nif doc.from_date:\n\n    from_date = frappe.utils.getdate(doc.from_date)\n\n    # \u2757 Prevent past leave\n    if from_date < today:\n        frappe.throw(\"Leave cannot be applied for past dates\")\n\n\n    # ==============================\n    # 1. Casual Leave \u2192 2 days before\n    # ==============================\n    if doc.leave_type == \"Casual Leave\":\n        diff = (from_date - today).days\n\n        if diff < 2:\n            frappe.throw(\"Casual Leave must be applied at least 2 days in advance\")\n\n\n    # ==============================\n    # 2. Maternity Leave \u2192 15 days before\n    # ==============================\n    elif doc.leave_type == \"Maternity Leave\":\n        diff = (from_date - today).days\n\n        if diff < 15:\n            frappe.throw(\"Maternity Leave must be applied at least 15 days in advance\")\n\n\n    # ==============================\n    # 3. Compensatory Off \u2192 within 7 days\n    # ==============================\n    elif doc.leave_type == \"Compensatory Off\":\n\n        if not doc.work_from_date:\n            frappe.throw(\"Work From Date is required for Compensatory Off\")\n\n        work_date = frappe.utils.getdate(doc.work_from_date)\n        diff = (from_date - work_date).days\n\n        if diff > 7:\n            frappe.throw(\"Compensatory Off must be used within 7 days of the worked date\")\n\n        if diff < 0:\n            frappe.throw(\"Leave date cannot be before the worked date\")",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "CRM Deal Contact Validation",
+        "reference_doctype": "CRM Deal",
+        "script": "if doc.lead:\n\n    lead = frappe.get_doc(\"CRM Lead\", doc.lead)\n\n    if lead.email:\n\n        existing_contact = frappe.db.exists(\n            \"Contact\",\n            {\"email_id\": lead.email}\n        )\n\n        if existing_contact:\n            frappe.msgprint(\n                f\"Contact already exists: {existing_contact}\"\n            )",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "deal assignment",
+        "reference_doctype": "CRM Deal",
+        "script": "user = frappe.session.user\n\n# Administrator can see all\nif user != \"Administrator\":\n\n    employee_roles = frappe.get_all(\n        \"Has Role\",\n        filters={\n            \"parent\": user\n        },\n        pluck=\"role\"\n    )\n\n    # CEO, CTO and Business Head can see all\n    if (\n        \"CEO\" not in employee_roles\n        and \"CTO\" not in employee_roles\n        and \"Business Head\" not in employee_roles\n    ):\n\n        conditions = f\"\"\"\n            EXISTS (\n                SELECT 1\n                FROM `tabToDo`\n                WHERE\n                    `tabToDo`.reference_type = 'CRM Deal'\n                    AND `tabToDo`.reference_name = `tabCRM Deal`.name\n                    AND `tabToDo`.allocated_to = '{user}'\n            )\n        \"\"\"",
+        "script_type": "Permission Query",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Fetch Source from URL",
+        "reference_doctype": "CRM Lead",
+        "script": "if doc.custom_url:\n    source = frappe.get_all(\n        \"CRM Lead Source\",\n        filters={\"custom_url\": doc.custom_url},\n        fields=[\"name\"],\n        limit=1\n    )\n    if source:\n        doc.source = source[0][\"name\"]",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Lead assignment",
+        "reference_doctype": "CRM Lead",
+        "script": "user = frappe.session.user\n\n# Administrator can see all\nif user != \"Administrator\":\n\n    employee_roles = frappe.get_all(\n        \"Has Role\",\n        filters={\n            \"parent\": user\n        },\n        pluck=\"role\"\n    )\n\n    # CEO, CTO and Business Head can see all\n    if (\n        \"CEO\" not in employee_roles\n        and \"CTO\" not in employee_roles\n        and \"Business Head\" not in employee_roles\n    ):\n\n        conditions = f\"\"\"\n            EXISTS (\n                SELECT 1\n                FROM `tabToDo`\n                WHERE\n                    `tabToDo`.reference_type = 'CRM Lead'\n                    AND `tabToDo`.reference_name = `tabCRM Lead`.name\n                    AND `tabToDo`.allocated_to = '{user}'\n            )\n        \"\"\"",
+        "script_type": "Permission Query",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "lost reason correction",
+        "reference_doctype": "CRM Deal",
+        "script": "# Ignore Lost Reason validation\n# unless status is Lost\n\nif doc.status != \"Lost\":\n\n    # Force clear value\n    doc.lost_reason = None\n\n    # Remove mandatory validation\n    doc.flags.ignore_mandatory = True\n\nelse:\n\n    if not doc.lost_reason:\n\n        frappe.throw(\n            \"Please select Lost Reason when status is Lost\"\n        )",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "meeting room for a past date logic",
+        "reference_doctype": "Meeting Room Booking",
+        "script": "if doc.date and str(doc.date) < frappe.utils.today():\n    frappe.throw(\"Cannot book a meeting room for a past date\")",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "project assignment",
+        "reference_doctype": "Project",
+        "script": "# ===================================\n# PROJECT VISIBILITY RESTRICTION\n# ===================================\n\nuser = frappe.session.user\n\n\n# ===================================\n# FULL ACCESS ROLES\n# ===================================\n\nfull_access_roles = [\n    \"System Manager\",\n    \"CEO\",\n    \"CTO\",\n    \"Projects Manager\"\n]\n\nhas_full_access = frappe.db.exists(\n    \"Has Role\",\n    {\n        \"parent\": user,\n        \"role\": [\"in\", full_access_roles]\n    }\n)\n\n\n# ===================================\n# FULL ACCESS USERS\n# ===================================\n\nif has_full_access:\n    conditions = \"1=1\"\n\n\n# ===================================\n# USERS SEE ONLY ASSIGNED PROJECTS\n# ===================================\n\nelse:\n\n    conditions = f\"\"\"\n    \n    EXISTS (\n    \n        SELECT 1\n    \n        FROM `tabProject User`\n    \n        WHERE\n    \n            `tabProject User`.parent = `tabProject`.name\n    \n            AND\n    \n            `tabProject User`.user = {frappe.db.escape(user)}\n    \n    )\n    \n    \"\"\"",
+        "script_type": "Permission Query",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Short Hours Deduction Script",
+        "reference_doctype": "Salary Slip",
+        "script": "total_hours = 0\n\nattendance_list = frappe.get_all(\"Attendance\",\n    filters={\n        \"employee\": doc.employee,\n        \"attendance_date\": [\"between\", [doc.start_date, doc.end_date]],\n        \"docstatus\": 1\n    },\n    fields=[\"working_hours\"]\n)\n\n# Sum working hours\nfor att in attendance_list:\n    total_hours += att.working_hours or 0\n\nexpected_hours = (doc.payment_days or 0) * 8\n\nmissing_hours = expected_hours - total_hours\n\n# Get Basic salary\nbase_salary = 0\nfor e in doc.earnings:\n    if e.salary_component and e.salary_component.lower() == \"basic\":\n        base_salary = e.amount or 0\n\n# \u2705 Only run deduction if attendance exists\nif total_hours > 0 and missing_hours > 0 and base_salary > 0 and expected_hours > 0:\n    \n    hourly_rate = base_salary / expected_hours\n    deduction = missing_hours * hourly_rate\n\n    # cap deduction\n    deduction = min(deduction, base_salary)\n\n    for d in doc.deductions:\n        if d.salary_component == \"Short Hours Deduction\":\n            d.amount = deduction",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Task assignment",
+        "reference_doctype": "Task",
+        "script": "# ===================================\n# TASK VISIBILITY RESTRICTION\n# ===================================\n\nuser = frappe.session.user\n\n\n# ===================================\n# FULL ACCESS ROLES\n# ===================================\n\nfull_access_roles = [\n    \"System Manager\",\n    \"CEO\",\n    \"CTO\",\n    \"Projects Manager\"\n]\n\n\nhas_full_access = frappe.db.exists(\n    \"Has Role\",\n    {\n        \"parent\": user,\n        \"role\": [\"in\", full_access_roles]\n    }\n)\n\n\n# ===================================\n# FULL ACCESS USERS\n# ===================================\n\nif has_full_access:\n\n    conditions = \"1=1\"\n\n\n# ===================================\n# EMPLOYEE TASK ACCESS\n# ===================================\n\nelse:\n\n    conditions = f\"\"\"\n\n        EXISTS(\n\n            SELECT 1\n\n            FROM `tabToDo`\n\n            WHERE\n\n                `tabToDo`.reference_type = 'Task'\n\n                AND\n\n                `tabToDo`.reference_name = `tabTask`.name\n\n                AND\n\n                `tabToDo`.allocated_to =\n                {frappe.db.escape(user)}\n\n        )\n\n    \"\"\"",
+        "script_type": "Permission Query",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Task assignment in CRM",
+        "reference_doctype": "CRM Task",
+        "script": "user = frappe.session.user\n\n# Users with full access\nfull_access_users = [\n    \"Administrator\",\n    \"deepak@codeyard.app\"\n]\n\nif user not in full_access_users:\n\n    employee_roles = frappe.get_all(\n        \"Has Role\",\n        filters={\n            \"parent\": user\n        },\n        pluck=\"role\"\n    )\n\n    # CEO and CTO can see all\n    if (\n        \"CEO\" not in employee_roles\n        and \"CTO\" not in employee_roles\n    ):\n\n        conditions = f\"\"\"\n            EXISTS (\n                SELECT 1\n                FROM `tabToDo`\n                WHERE\n                    `tabToDo`.reference_type = 'CRM Task'\n                    AND `tabToDo`.reference_name = `tabCRM Task`.name\n                    AND `tabToDo`.allocated_to = '{user}'\n            )\n        \"\"\"",
+        "script_type": "Permission Query",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "Update Timesheet",
+        "reference_doctype": "Timesheet",
+        "script": "if not frappe.flags.get(\"amc_sync_running\"):\n\n    frappe.flags.amc_sync_running = True\n\n    if doc.custom_amc_contract:\n\n        amc = frappe.get_doc(\"AMC Contract\", doc.custom_amc_contract)\n\n        # SAFETY: ensure child table exists\n        if not amc.get(\"table_bxbb\"):\n            amc.table_bxbb = []\n\n        # REMOVE OLD ENTRIES FOR THIS TIMESHEET\n        amc.table_bxbb = [\n            d for d in (amc.table_bxbb or [])\n            if d.timesheet != doc.name\n        ]\n\n        # ADD NEW ENTRIES\n        for row in (doc.time_logs or []):\n\n            if not row.hours:\n                continue\n\n            amc.append(\"table_bxbb\", {\n                \"date\": row.from_time,\n                \"hours_usage\": row.hours,\n                \"employee\": doc.employee,\n                \"timesheet\": doc.name,\n                \"activity_type\": row.activity_type,\n                \"ticket\": row.custom_ticket\n            })\n\n        # CALCULATE TOTAL USED HOURS\n        total_used = sum(\n            (d.hours_usage or 0)\n            for d in (amc.table_bxbb or [])\n        )\n\n        amc.hours_used = total_used\n\n        # TOTAL HOURS\n        total_hours = amc.total_hours or 0\n\n        # REMAINING HOURS\n        remaining = total_hours - total_used\n\n        amc.hours_remaining = (\n            remaining if remaining > 0 else 0\n        )\n\n        # LOW BALANCE ALERT\n        if total_hours > 0:\n\n            percent_remaining = (\n                (amc.hours_remaining / total_hours) * 100\n            )\n\n            if percent_remaining <= 20:\n\n                frappe.msgprint(\n                    f\"\u26a0 AMC Low Balance! Remaining: \"\n                    f\"{amc.hours_remaining} hrs \"\n                    f\"({percent_remaining:.1f}%)\"\n                )\n\n                amc.add_comment(\n                    \"Comment\",\n                    f\"Low Balance Alert: \"\n                    f\"{amc.hours_remaining} hrs remaining \"\n                    f\"({percent_remaining:.1f}%)\"\n                )\n\n        # SAVE FLAGS\n        amc.flags.ignore_validate_update_after_submit = True\n        amc.flags.ignore_mandatory = True\n        amc.flags.ignore_permissions = True\n\n        amc.save(ignore_permissions=True)",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    },
+    {
+        "name": "WFH",
+        "reference_doctype": "Leave Application",
+        "script": "# 1. Ensure status is always set\nif not doc.status:\n    doc.status = \"Open\"\n\n\n# 2. Handle workflow transitions safely\nif doc.workflow_state:\n    if doc.workflow_state == \"Pending\":\n        doc.status = \"Open\"\n\n    elif doc.workflow_state == \"Approved\":\n        doc.status = \"Approved\"\n\n    elif doc.workflow_state == \"Rejected\":\n        doc.status = \"Rejected\"\n\n\n# 3. Auto assign Reporting Manager as Leave Approver (SAFE)\nif doc.employee:\n    try:\n        employee = frappe.get_doc(\"Employee\", doc.employee)\n\n        if employee.reports_to:\n            manager = frappe.get_doc(\"Employee\", employee.reports_to)\n\n            if manager.user_id:\n                doc.leave_approver = manager.user_id\n\n    except Exception:\n        pass",
+        "script_type": "DocType Event",
+        "doctype": "Server Script"
+    }
+]
