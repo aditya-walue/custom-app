@@ -140,7 +140,7 @@ frappe.pages["room-booking"].on_page_load = function (wrapper) {
 			events: function (info, successCallback, failureCallback) {
 				let room = room_field.get_value() || "";
 				frappe.call({
-					method: "custom_app.api.room_booking.get_bookings",
+					method: "custom_app.custom_app.api.room_booking.get_bookings",
 					args: {
 						start: info.startStr,
 						end: info.endStr,
@@ -248,7 +248,7 @@ frappe.pages["room-booking"].on_page_load = function (wrapper) {
 					primary_action_label: "Book Room",
 					primary_action: function (values) {
 						frappe.call({
-							method: "custom_app.api.room_booking.create_booking",
+							method: "custom_app.custom_app.api.room_booking.create_booking",
 							args: values,
 							freeze: true,
 							freeze_message: "Booking room...",
@@ -334,7 +334,7 @@ frappe.pages["room-booking"].on_page_load = function (wrapper) {
 					dialog.set_primary_action("Cancel Booking", function () {
 						frappe.confirm("Cancel this booking?", function () {
 							frappe.call({
-								method: "custom_app.api.room_booking.cancel_booking",
+								method: "custom_app.custom_app.api.room_booking.cancel_booking",
 								args: { booking_name: booking_name },
 								callback: function (r) {
 									if (r.message) {
