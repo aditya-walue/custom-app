@@ -25,3 +25,13 @@ def execute():
         if os.path.exists(dt_json_path):
             import_file_by_path(dt_json_path, force=True)
             frappe.db.commit()
+
+    # 4. Force import the workspace Meeting from custom_app
+    workspace_json_path = os.path.join(app_path, 'custom_app', 'workspace', 'meeting', 'meeting.json')
+    if os.path.exists(workspace_json_path):
+        if frappe.db.exists('Workspace', 'Meeting'):
+            frappe.delete_doc('Workspace', 'Meeting', force=True)
+            frappe.db.commit()
+        import_file_by_path(workspace_json_path, force=True)
+        frappe.db.commit()
+
