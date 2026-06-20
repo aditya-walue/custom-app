@@ -1,0 +1,57 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "CRM Form Script",
+  "dt": "CRM Lead",
+  "enabled": 1,
+  "is_standard": 1,
+  "modified": "2026-06-17 16:30:14.814741",
+  "name": "Product Details Script for CRM Lead",
+  "script": "class CRMLead {\n  update_total() {\n    let total = 0\n    let total_qty = 0\n    let net_total = 0\n    let discount_applied = false\n\n    this.doc.products.forEach((d) => {\n      total += d.amount\n      net_total += d.net_amount\n      if (d.discount_percentage > 0) {\n        discount_applied = true\n      }\n    })\n\n    this.doc.total = total\n    this.doc.net_total = net_total || total\n\n    if (!net_total && discount_applied) {\n      this.doc.net_total = net_total\n    }\n  }\n}\n\nclass CRMProducts {\n  products_add() {\n    let row = this.doc.getRow('products')\n    row.trigger('qty')\n    this.doc.trigger('update_total')\n  }\n\n  products_remove() {\n    this.doc.trigger('update_total')\n  }\n\n  async product_code(idx) {\n    let row = this.doc.getRow('products', idx)\n\n    let a = await call(\"crm.fcrm.doctype.crm_products.crm_products.get_product_rate_details\", {\n        product_code: row.product_code,\n    })\n    if (!a) return\n\n    row.product_name = a.product_name\n    if (a.rate && !row.rate) {\n        row.rate = a.rate\n        row.trigger(\"rate\")\n    }\n  }\n\n  qty(idx) {\n    let row = this.doc.getRow('products', idx)\n    row.amount = row.qty * row.rate\n    row.trigger('discount_percentage', idx)\n  }\n\n  rate() {\n    let row = this.doc.getRow('products')\n    row.amount = row.qty * row.rate\n    row.trigger('discount_percentage')\n  }\n\n  discount_percentage(idx) {\n    let row = this.doc.getRow('products', idx)\n    if (!row.discount_percentage) {\n      row.net_amount = row.amount\n      row.discount_amount = 0\n    }\n    if (row.discount_percentage && row.amount) {\n      row.discount_amount = (row.discount_percentage / 100) * row.amount\n      row.net_amount = row.amount - row.discount_amount\n    }\n    this.doc.trigger('update_total')\n  }\n}",
+  "view": "Form"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Form Script",
+  "dt": "CRM Deal",
+  "enabled": 1,
+  "is_standard": 1,
+  "modified": "2026-06-17 16:30:14.817563",
+  "name": "Product Details Script for CRM Deal",
+  "script": "class CRMDeal {\n  update_total() {\n    let total = 0\n    let total_qty = 0\n    let net_total = 0\n    let discount_applied = false\n\n    this.doc.products.forEach((d) => {\n      total += d.amount\n      net_total += d.net_amount\n      if (d.discount_percentage > 0) {\n        discount_applied = true\n      }\n    })\n\n    this.doc.total = total\n    this.doc.net_total = net_total || total\n\n    if (!net_total && discount_applied) {\n      this.doc.net_total = net_total\n    }\n  }\n}\n\nclass CRMProducts {\n  products_add() {\n    let row = this.doc.getRow('products')\n    row.trigger('qty')\n    this.doc.trigger('update_total')\n  }\n\n  products_remove() {\n    this.doc.trigger('update_total')\n  }\n\n  async product_code(idx) {\n    let row = this.doc.getRow('products', idx)\n\n    let a = await call(\"crm.fcrm.doctype.crm_products.crm_products.get_product_rate_details\", {\n        product_code: row.product_code,\n    })\n    if (!a) return\n\n    row.product_name = a.product_name\n    if (a.rate && !row.rate) {\n        row.rate = a.rate\n        row.trigger(\"rate\")\n    }\n  }\n\n  qty(idx) {\n    let row = this.doc.getRow('products', idx)\n    row.amount = row.qty * row.rate\n    row.trigger('discount_percentage', idx)\n  }\n\n  rate() {\n    let row = this.doc.getRow('products')\n    row.amount = row.qty * row.rate\n    row.trigger('discount_percentage')\n  }\n\n  discount_percentage(idx) {\n    let row = this.doc.getRow('products', idx)\n    if (!row.discount_percentage) {\n      row.net_amount = row.amount\n      row.discount_amount = 0\n    }\n    if (row.discount_percentage && row.amount) {\n      row.discount_amount = (row.discount_percentage / 100) * row.amount\n      row.net_amount = row.amount - row.discount_amount\n    }\n    this.doc.trigger('update_total')\n  }\n}",
+  "view": "Form"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Form Script",
+  "dt": "CRM Deal",
+  "enabled": 1,
+  "is_standard": 1,
+  "modified": "2026-06-17 16:30:14.820304",
+  "name": "Forecasting Script",
+  "script": "class CRMDeal {\n    async status() {\n        await this.doc.trigger('updateProbability')\n    }\n    async updateProbability() {\n        let status = await call(\"frappe.client.get_value\", {\n            doctype: \"CRM Deal Status\",\n            fieldname: \"probability\",\n            filters: { name: this.doc.status },\n        })\n\n        this.doc.probability = status.probability\n    }\n}",
+  "view": "Form"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Form Script",
+  "dt": "CRM Deal",
+  "enabled": 1,
+  "is_standard": 0,
+  "modified": "2026-06-19 16:02:55.485189",
+  "name": "Create Quotation from CRM Deal",
+  "script": "class CRMDeal {\n\tonLoad() {\n\t\tif (this.doc.__newDocument) return\n\t\tcall(\n\t\t\t\"frappe.client.get_single_value\",\n\t\t\t{\n\t\t\t\tdoctype: \"ERPNext CRM Settings\",\n\t\t\t\tfield: \"enabled\"\n\t\t\t}\n\t\t).then((enabled) => {\n\t\t\tif (enabled) this.doc.trigger('setActions')\n\t\t})\n\t}\n\tsetActions() {\n\t\t// Add Create Quotation Button\n\t\tthis.actions.push({\n\t\t\tlabel: __(\"Create Quotation\"),\n\t\t\tonClick: () => {\n\t\t\t\tcall(\n\t\t\t\t\t\"crm.fcrm.doctype.erpnext_crm_settings.erpnext_crm_settings.get_quotation_url\",\n\t\t\t\t\t{\n\t\t\t\t\t\tcrm_deal: this.doc.name,\n\t\t\t\t\t\torganization: this.doc.organization\n\t\t\t\t\t}\n\t\t\t\t).then((quotation_url) => {\n\t\t\t\t\tif (quotation_url) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst url = new URL(quotation_url, window.location.origin);\n\t\t\t\t\t\t\tconst prefill = {\n\t\t\t\t\t\t\t\tquotation_to: url.searchParams.get('quotation_to'),\n\t\t\t\t\t\t\t\tcrm_deal: url.searchParams.get('crm_deal'),\n\t\t\t\t\t\t\t\tparty_name: url.searchParams.get('party_name')\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t\tlocalStorage.setItem('crm_deal_quotation_prefill', JSON.stringify(prefill));\n\t\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t\tconsole.error(e);\n\t\t\t\t\t\t}\n\t\t\t\t\t\twindow.open(quotation_url, '_blank');\n\t\t\t\t\t} else {\n\t\t\t\t\t\ttoast.error(\"Error while creating quotation in ERPNext\");\n\t\t\t\t\t}\n\t\t\t\t}).catch((e) => {\n\t\t\t\t\ttoast.error(e.messages[0] || \"Error while creating quotation in ERPNext. Check error log in ERPNext for more details\");\n\t\t\t\t});\n\t\t\t}\n\t\t})\n\n\t\t// Add View Customer Button\n\t\tcall(\"crm.fcrm.doctype.erpnext_crm_settings.erpnext_crm_settings.get_customer_link\", {\n\t\t\tcrm_deal: this.doc.name\n\t\t}).then((customer_url) => {\n\t\t\tif (customer_url) {\n\t\t\t\tthis.actions.push({\n\t\t\t\t\tlabel: __(\"View Customer\"),\n\t\t\t\t\tonClick: () => window.open(customer_url, '_blank')\n\t\t\t\t});\n\t\t\t}\n\t\t}).catch((e) => {\n\t\t\ttoast.error(e.messages[0] || \"Error while fetching customer link from ERPNext. Check error log in ERPNext for more details\");\n\t\t});\n\t}\n}\n",
+  "view": "Form"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "CRM Form Script",
+  "dt": "Address",
+  "enabled": 1,
+  "is_standard": 0,
+  "modified": "2026-06-20 10:55:40.861574",
+  "name": "Address India States Autocomplete",
+  "script": "class Address {\n  onLoad() {\n    this.country()\n  }\n  country() {\n    const states = [\n      \"Andaman and Nicobar Islands\",\n      \"Andhra Pradesh\",\n      \"Arunachal Pradesh\",\n      \"Assam\",\n      \"Bihar\",\n      \"Chandigarh\",\n      \"Chhattisgarh\",\n      \"Dadra and Nagar Haveli and Daman and Diu\",\n      \"Delhi\",\n      \"Goa\",\n      \"Gujarat\",\n      \"Haryana\",\n      \"Himachal Pradesh\",\n      \"Jammu and Kashmir\",\n      \"Jharkhand\",\n      \"Karnataka\",\n      \"Kerala\",\n      \"Ladakh\",\n      \"Lakshadweep Islands\",\n      \"Madhya Pradesh\",\n      \"Maharashtra\",\n      \"Manipur\",\n      \"Meghalaya\",\n      \"Mizoram\",\n      \"Nagaland\",\n      \"Odisha\",\n      \"Puducherry\",\n      \"Punjab\",\n      \"Rajasthan\",\n      \"Sikkim\",\n      \"Tamil Nadu\",\n      \"Telangana\",\n      \"Tripura\",\n      \"Uttar Pradesh\",\n      \"Uttarakhand\",\n      \"West Bengal\"\n    ];\n    if (this.doc.country === 'India') {\n      this.setFieldProperties('state', {\n        fieldtype: 'Autocomplete',\n        options: states.join('\\n')\n      })\n    } else {\n      this.setFieldProperties('state', {\n        fieldtype: 'Data',\n        options: null\n      })\n    }\n  }\n}",
+  "view": "Form"
+ }
+]

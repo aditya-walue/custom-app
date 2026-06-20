@@ -10,8 +10,8 @@ app_license = "mit"
 fixtures = [
 	{"dt": "Client Script"},
     {"dt": "Server Script"},
-   {"dt": "Custom Field"}
-    
+    {"dt": "Custom Field"},
+    {"dt": "CRM Form Script"},
 ]
 # required_apps = []
 
